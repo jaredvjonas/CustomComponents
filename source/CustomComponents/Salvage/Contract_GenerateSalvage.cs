@@ -25,6 +25,29 @@ public static class Contract_GenerateSalvage
         return mech.Inventory.Any(item => (item.DamageLevel == ComponentDamageLevel.Destroyed && item.Def.CCFlags().Vital) || item.GetComponents<IIsDestroyed>().Any(isDestroyed => isDestroyed.IsMechDestroyed(item, mech)));
     }
 
+    // CustomUnits represents combat vehicles as Mech-type units, so destroyed vehicles arrive
+    // in the enemyMechs list (not enemyVehicles) and would be salvaged like mechs. Detect them
+    // via the base-game DataManager (a vehicle's chassis is a registered VehicleChassisDef),
+    // with CustomUnits' "unit_vehicle" tag as a fallback. Kept dependency-free so CustomComponents
+    // does not need a reference to CustomUnits.
+    public static bool IsVehicleUnit(MechDef mech)
+    {
+        if (mech == null)
+        {
+            return false;
+        }
+
+        var dataManager = UnityGameInstance.BattleTechGame?.DataManager;
+        if (dataManager != null
+            && !string.IsNullOrEmpty(mech.ChassisID)
+            && dataManager.VehicleChassisDefs.Exists(mech.ChassisID))
+        {
+            return true;
+        }
+
+        return mech.MechTags != null && mech.MechTags.Contains("unit_vehicle");
+    }
+
     [HarmonyPrefix]
     [HarmonyWrapSafe]
     [HarmonyPriority(Priority.Low)]
@@ -32,6 +55,20 @@ public static class Contract_GenerateSalvage
         List<UnitResult> lostUnits, bool logResults,
         Contract __instance, ref List<SalvageDef> ___finalPotentialSalvage)
     {
+        // Strip vehicle units from the salvage input up front so EVERY salvage consumer
+        // excludes them - not just this override, but vanilla and other postfix patchers
+        // (e.g. SalvageOperations) that independently iterate enemyMechs. CustomUnits delivers
+        // combat vehicles as Mech-type units in enemyMechs. Done before the early-returns below
+        // so it applies regardless of OverrideSalvageGeneration / __runOriginal.
+        if (!Control.Settings.SalvageVehicleComponents && enemyMechs != null)
+        {
+            int removed = enemyMechs.RemoveAll(u => IsVehicleUnit(u?.mech));
+            if (removed > 0)
+            {
+                Log.SalvageProcess.Trace?.Log($"Removed {removed} vehicle unit(s) from salvage input (SalvageVehicleComponents=false)");
+            }
+        }
+
         if (!__runOriginal)
         {
             return;
@@ -193,6 +230,12 @@ public static class Contract_GenerateSalvage
         Log.SalvageProcess.Trace?.Log($"- Enemy Mechs {__instance.Name}");
         foreach (var unit in enemyMechs)
         {
+            if (!Control.Settings.SalvageVehicleComponents && IsVehicleUnit(unit.mech))
+            {
+                Log.SalvageProcess.Trace?.Log($"-- {unit.mech?.Name} is a vehicle - skipping (SalvageVehicleComponents=false)");
+                continue;
+            }
+
             if (unit.pilot.IsIncapacitated || IsDestroyed(unit.mech) || unit.pilot.HasEjected)
             {
                 AddMechToSalvage(unit.mech, contract, simgame, Constants, ___finalPotentialSalvage);
