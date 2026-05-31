@@ -108,10 +108,21 @@ public class Database
     }
 
     private static readonly Dictionary<string, List<object>> Customs = new(StringComparer.Ordinal);
+
+    // Backward compatibility overload for external mods (e.g., CustomUnits)
+    public static bool AddCustom(string identifier, ICustom cc)
+    {
+        return AddCustomInternal(identifier, cc);
+    }
+
     internal static bool AddCustom(object target, ICustom cc)
     {
         var identifier = Identifier(target);
+        return AddCustomInternal(identifier, cc);
+    }
 
+    private static bool AddCustomInternal(string identifier, ICustom cc)
+    {
         if (identifier == null)
         {
             return false;

@@ -209,9 +209,9 @@ public class MechLabHelper
 
             if(locationHelper.HardpointsUsage != null)
             {
-                foreach (var hpUsage in locationHelper.HardpointsUsage)
+                foreach (var hpUsage in locationHelper.HardpointsUsage.Where(h => h.hpInfo != null))
                 {
-                    var item = usage.FirstOrDefault(i => i.hpInfo.WeaponCategory.ID == hpUsage.WeaponCategoryID);
+                    var item = usage.FirstOrDefault(i => i.hpInfo != null && i.hpInfo.WeaponCategory.ID == hpUsage.WeaponCategoryID);
                     if (item == null)
                     {
                         usage.Add(new(hpUsage));

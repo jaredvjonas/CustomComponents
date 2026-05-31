@@ -53,7 +53,7 @@ public class LocationHelper
                     continue;
                 }
 
-                while (active_hp < HardpointsUsage.Count && !HardpointsUsage[active_hp].hpInfo.Visible)
+                while (active_hp < HardpointsUsage.Count && (HardpointsUsage[active_hp].hpInfo == null || !HardpointsUsage[active_hp].hpInfo.Visible))
                     active_hp += 1;
 
                 if (active_hp < HardpointsUsage.Count)
@@ -66,7 +66,7 @@ public class LocationHelper
                         break;
                     }
 
-                    if (widget.WeaponCategory == null || widget.WeaponCategory.ID != HardpointsUsage[active_hp].hpInfo.WeaponCategory.ID)
+                    if (hp.hpInfo != null && (widget.WeaponCategory == null || widget.WeaponCategory.ID != hp.hpInfo.WeaponCategory.ID))
                     {
                         widget.Init(hp.hpInfo);
                     }

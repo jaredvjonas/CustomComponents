@@ -50,7 +50,7 @@ public static class MechLabLocationWidget_ShowHighlightFrame
                 var lhelper = MechLabHelper.CurrentMechLab.GetLocationHelper(location);
                 var wc = use_hp == null ? replace.UseWeaponCategory : use_hp.WeaponCategory;
 
-                show = lhelper.HardpointsUsage?.Any(i => i.hpInfo.CompatibleID.Contains(wc.ID)) ?? false;
+                show = lhelper.HardpointsUsage?.Any(i => i.hpInfo != null && i.hpInfo.CompatibleID.Contains(wc.ID)) ?? false;
             }
         }
 

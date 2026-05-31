@@ -25,6 +25,10 @@ public class AddHardpoint : SimpleCustomComponent, IValueComponent<string>, IPre
         if (!WeaponCategory.Is_NotSet)
         {
             HPinfo = HardpointController.Instance[WeaponCategory];
+            if (HPinfo == null)
+            {
+                Log.Main.Error?.Log($"Missing weapon category info: CategoryID={WeaponCategory.ID}, CategoryName={WeaponCategory.Name}, FriendlyName={WeaponCategory.FriendlyName}, Component={Def.Description.Id}");
+            }
         }
     }
 
@@ -38,9 +42,9 @@ public class AddHardpoint : SimpleCustomComponent, IValueComponent<string>, IPre
         var hardpoints = MechLabHelper.CurrentMechLab.ActiveMech.GetAllHardpoints(location);
 
         var n = 0;
-        foreach (var  hardpoint in hardpoints)
+        foreach (var hardpoint in hardpoints)
         {
-            if (hardpoint.hpInfo.Visible)
+            if (hardpoint.hpInfo != null && hardpoint.hpInfo.Visible)
             {
                 n += 1;
                 if (hardpoint.hpInfo.WeaponCategory.ID == WeaponCategory.ID)
@@ -68,6 +72,7 @@ public class AddHardpoint : SimpleCustomComponent, IValueComponent<string>, IPre
         var hpinfo = HardpointController.Instance[WeaponCategory];
         if (hpinfo == null || !hpinfo.Visible)
         {
+            // Note: hpinfo being null here is already logged in LoadValue, no need to log again
             return;
         }
 
@@ -110,6 +115,25 @@ public class ReplaceHardpoint : SimpleCustomComponent, IOnLoaded, IPreValidateDr
         if (UseWeaponCategory == null)
         {
             UseWeaponCategory = WeaponCategoryEnumeration.GetNotSetValue();
+        }
+
+        // Check for missing hardpoint info and log with component context
+        if (!AddWeaponCategory.Is_NotSet)
+        {
+            var addHpInfo = HardpointController.Instance[AddWeaponCategory];
+            if (addHpInfo == null)
+            {
+                Log.Main.Error?.Log($"Missing weapon category info: CategoryID={AddWeaponCategory.ID}, CategoryName={AddWeaponCategory.Name}, FriendlyName={AddWeaponCategory.FriendlyName}, Component={Def.Description.Id} (AddHardpoint)");
+            }
+        }
+
+        if (!UseWeaponCategory.Is_NotSet)
+        {
+            var useHpInfo = HardpointController.Instance[UseWeaponCategory];
+            if (useHpInfo == null)
+            {
+                Log.Main.Error?.Log($"Missing weapon category info: CategoryID={UseWeaponCategory.ID}, CategoryName={UseWeaponCategory.Name}, FriendlyName={UseWeaponCategory.FriendlyName}, Component={Def.Description.Id} (UseHardpoint)");
+            }
         }
     }
 

@@ -135,6 +135,11 @@ public class CustomComponentSettings
     public List<TagColor> ColorTags = new();
 
     public bool OverrideSalvageGeneration = true;
+    // When false (default), destroyed enemy vehicles contribute no salvage components,
+    // matching vanilla behavior. IrianTech does not support vehicles as player units, and
+    // vehicle components referencing unloaded defs (e.g. Heavy Metal DLC stubs) produce
+    // null-def salvage picks that crash AAR_SalvageChosen.SortBy_Name on Confirm.
+    public bool SalvageVehicleComponents = false;
     public bool NoLootCTDestroyed = false;
     public bool BaseECMValidation = true;
 

@@ -266,7 +266,7 @@ public static class HardpointExtentions
         var result = mech.GetAllHardpoints(location, inv);
         foreach (var item in inv.Where(i => i.Location == location)
                      .Select(i => i.Item.GetComponent<UseHardpointCustom>())
-                     .Where(i => i != null && !i.WeaponCategory.Is_NotSet))
+                     .Where(i => i != null && !i.WeaponCategory.Is_NotSet && i.hpInfo != null))
         {
             HPUsage first = null;
             var found = false;
@@ -275,7 +275,7 @@ public static class HardpointExtentions
             {
                 var hp = result[i];
 
-                if (!hp.hpInfo.CompatibleID.Contains(item.WeaponCategory.ID))
+                if (hp.hpInfo == null || !hp.hpInfo.CompatibleID.Contains(item.WeaponCategory.ID))
                 {
                     continue;
                 }
@@ -317,9 +317,9 @@ public static class HardpointExtentions
 
                 if (usage != null)
                 {
-                    foreach (var hpUsage in usage)
+                    foreach (var hpUsage in usage.Where(h => h.hpInfo != null))
                     {
-                        var item = result.FirstOrDefault(i => i.hpInfo.WeaponCategory.ID == hpUsage.WeaponCategoryID);
+                        var item = result.FirstOrDefault(i => i.hpInfo != null && i.hpInfo.WeaponCategory.ID == hpUsage.WeaponCategoryID);
                         if (item == null)
                         {
                             result.Add(new(hpUsage));
@@ -351,17 +351,20 @@ public static class HardpointExtentions
             return null;
         }
 
-        var result = chassis.GetHardpoints(location).Select(a => new HPUsage(a, true)).ToList();
+        var hardpoints = chassis.GetHardpoints(location);
+        var result = hardpoints != null
+            ? hardpoints.Select(a => new HPUsage(a, true)).ToList()
+            : new List<HPUsage>();
 
         foreach (var invItem in inventory.Where(i => i.Location == location))
         {
             if (invItem.Item.Is<AddHardpoint>(out var add) && add.Valid)
             {
-                AddToList(result, add.WeaponCategory);
+                AddToList(result, add.WeaponCategory, chassis.Description.Id, location, invItem.Item.ComponentDefID);
             }
             else if (invItem.Item.Is<ReplaceHardpoint>(out var replace) && replace.Valid)
             {
-                AddToList(result, replace.AddWeaponCategory);
+                AddToList(result, replace.AddWeaponCategory, chassis.Description.Id, location, invItem.Item.ComponentDefID);
                 SubFromList(result, replace.UseWeaponCategory);
             }
         }
@@ -392,7 +395,7 @@ public static class HardpointExtentions
                         continue;
                     }
 
-                    AddToList(list, wc);
+                    AddToList(list, wc, chassis.Description.Id, location);
                 }
                 list.Sort();
             }
@@ -402,7 +405,7 @@ public static class HardpointExtentions
         return result;
     }
 
-    private static void AddToList(List<HPUsage> list, WeaponCategoryValue wc)
+    private static void AddToList(List<HPUsage> list, WeaponCategoryValue wc, string chassisId, ChassisLocations location, string componentId = null)
     {
         var item = list.FirstOrDefault(i => i.WeaponCategoryID == wc.ID);
         if (item != null)
@@ -411,10 +414,22 @@ public static class HardpointExtentions
         }
         else
         {
-            item = new(HardpointController.Instance[wc.ID], 1);
-            if (item.hpInfo != null)
+            var hpInfo = HardpointController.Instance[wc.ID];
+            if (hpInfo != null)
             {
+                item = new(hpInfo, 1);
                 list.Add(new(item, true));
+            }
+            else
+            {
+                if (componentId != null)
+                {
+                    Log.Main.Error?.Log($"Missing weapon category info: CategoryID={wc.ID}, CategoryName={wc.Name}, FriendlyName={wc.FriendlyName}, Chassis={chassisId}, Location={location}, Component={componentId}");
+                }
+                else
+                {
+                    Log.Main.Error?.Log($"Missing weapon category info: CategoryID={wc.ID}, CategoryName={wc.Name}, FriendlyName={wc.FriendlyName}, Chassis={chassisId}, Location={location}");
+                }
             }
         }
     }

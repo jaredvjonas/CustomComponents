@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using BattleTech;
 using BattleTech.UI;
@@ -112,13 +113,8 @@ public class HardpointController
     {
         get
         {
-            if (HardpointsByName.TryGetValue(wcname, out var result))
-            {
-                return result;
-            }
-
-            Log.Main.Error?.Log($"{wcname} - dont have weapon category info!");
-            return null;
+            HardpointsByName.TryGetValue(wcname, out var result);
+            return result;
         }
 
     }
@@ -127,58 +123,83 @@ public class HardpointController
     {
         get
         {
-            if (HardpointsByID.TryGetValue(wcid, out var result))
-            {
-                return result;
-            }
-
-            Log.Main.Error?.Log($"{wcid} - dont have weapon category info!");
-            return null;
-
+            HardpointsByID.TryGetValue(wcid, out var result);
+            return result;
         }
 
     }
 
     public void Setup(Dictionary<string, Dictionary<string, VersionManifestEntry>> customResources)
     {
-        //SetupDefaults();
-        Registry.RegisterPostProcessor(new AddCustomToWeaponPostProcessor());
-
-        foreach (var hp in SettingsResourcesTools.Enumerate<HardpointInfo>("CCHardpoints", customResources))
+        try
         {
-            if (hp.Complete())
+            // register post processors first
+            Registry.RegisterPostProcessor(new AddCustomToWeaponPostProcessor());
+
+            foreach (var hp in SettingsResourcesTools.Enumerate<HardpointInfo>("CCHardpoints", customResources))
             {
-                if(Control.Settings.DEBUG_ShowLoadedHardpoints)
+                try
                 {
-                    Log.Main.Info?.Log($"Hardpoint {hp.ID} loaded, [{hp.CompatibleID.Aggregate("", (last, next) => last + " " + WeaponCategoryEnumeration.GetWeaponCategoryByID(next).FriendlyName)}]");
+                    if (hp == null)
+                    {
+                        Log.Main.Warning?.Log("Skipped null Hardpoint entry from resources.");
+                        continue;
+                    }
+
+                    if (hp.Complete())
+                    {
+                        if (Control.Settings.DEBUG_ShowLoadedHardpoints)
+                        {
+                            Log.Main.Info?.Log($"Hardpoint {hp.ID} loaded, [{hp.CompatibleID.Aggregate("", (last, next) => last + " " + WeaponCategoryEnumeration.GetWeaponCategoryByID(next).FriendlyName)}]");
+                        }
+
+                        HardpointsByName[hp.ID] = hp;
+                        HardpointsByID[hp.WeaponCategory.ID] = hp;
+                    }
                 }
+                catch (Exception exPerHp)
+                {
+                    Log.Main.Error?.Log($"Exception while processing Hardpoint '{hp?.ID ?? "unknown"}': {exPerHp}");
+                }
+            }
 
-                HardpointsByName[hp.ID] = hp;
-                HardpointsByID[hp.WeaponCategory.ID] = hp;
+            HardpointsList = HardpointsByName.Values.OrderBy(i => i.CompatibleID.Count).ToList();
+
+            try
+            {
+                if (HardpointsByID.TryGetValue(Control.Settings.OmniCategoryID, out var omni))
+                {
+                    omni.CompatibleID = HardpointsList
+                        .Where(i => i.AllowOmni)
+                        .Select(i => i.WeaponCategory.ID)
+                        .ToHashSet();
+                }
+            }
+            catch (Exception exOmni)
+            {
+                Log.Main.Error?.Log($"Exception while building omni compatible list: {exOmni}");
+            }
+
+            if (Control.Settings.DEBUG_ShowLoadedHardpoints)
+            {
+                Log.Main.Info?.Log($"Hardpoints: Total {HardpointsList?.Count ?? 0} Loaded");
+                if (HardpointsByID.TryGetValue(Control.Settings.OmniCategoryID, out var omni))
+                {
+                    Log.Main.Info?.Log($"- omni list [{omni.CompatibleID.Aggregate("", (last, next) => last + " " + WeaponCategoryEnumeration.GetWeaponCategoryByID(next).FriendlyName)}]");
+                }
+                else
+                {
+                    Log.Main.Info?.Log("- no omni hardpoint definition load");
+                }
             }
         }
-        HardpointsList = HardpointsByName.Values.OrderBy(i => i.CompatibleID.Count).ToList();
-
-        HardpointInfo omni;
-        if (HardpointsByID.TryGetValue(Control.Settings.OmniCategoryID, out omni))
+        catch (Exception ex)
         {
-            omni.CompatibleID = HardpointsList
-                .Where(i => i.AllowOmni)
-                .Select(i => i.WeaponCategory.ID)
-                .ToHashSet();
-        }
-
-        if (Control.Settings.DEBUG_ShowLoadedHardpoints)
-        {
-            Log.Main.Info?.Log($"Hardpoints: Total {HardpointsList?.Count ?? 0} Loaded");
-            if(omni != null)
-            {
-                Log.Main.Info?.Log($"- omni list [{omni.CompatibleID.Aggregate("", (last, next) => last + " " + WeaponCategoryEnumeration.GetWeaponCategoryByID(next).FriendlyName)}]");
-            }
-            else
-            {
-                Log.Main.Info?.Log("- no omni hardpoint definition load");
-            }
+            Log.Main.Error?.Log($"HardpointController.Setup failed: {ex}");
+            // ensure internal collections are in a safe state to prevent null-reference crashes later
+            HardpointsByName = HardpointsByName ?? new Dictionary<string, HardpointInfo>();
+            HardpointsByID = HardpointsByID ?? new Dictionary<int, HardpointInfo>();
+            HardpointsList = HardpointsList ?? new List<HardpointInfo>();
         }
     }
 
@@ -213,7 +234,7 @@ public class HardpointController
             {
                 if (HardpointsByID.TryGetValue(recrd.wcat.ID, out var hpInfo))
                 {
-                    var nearest = hardpoints.FirstOrDefault(i => i.Total > i.Used && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
+                    var nearest = hardpoints.FirstOrDefault(i => i.Total > i.Used && i.hpInfo != null && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
                     if (nearest != null)
                     {
                         nearest.Used += 1;
@@ -252,7 +273,7 @@ public class HardpointController
             {
                 if (HardpointsByID.TryGetValue(recrd.wcat.ID, out var hpInfo))
                 {
-                    var nearest = hardpoints.FirstOrDefault(i => i.Total> i.Used && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
+                    var nearest = hardpoints.FirstOrDefault(i => i.Total > i.Used && i.hpInfo != null && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
                     if (nearest != null)
                     {
                         nearest.Used += 1;
@@ -291,7 +312,7 @@ public class HardpointController
             {
                 if (HardpointsByID.TryGetValue(recrd.wcat.ID, out var hpInfo))
                 {
-                    var nearest = hardpoints.FirstOrDefault(i => i.Total > i.Used && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
+                    var nearest = hardpoints.FirstOrDefault(i => i.Total > i.Used && i.hpInfo != null && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID));
                     if (nearest != null)
                     {
                         nearest.Used += 1;

@@ -56,7 +56,7 @@ public abstract class HPHandler : MonoBehaviour
 
         foreach (var widget in hardpoints)
         {
-            var item = usage.FirstOrDefault(i => i.hpInfo.WeaponCategory.ID == widget.Key);
+            var item = usage.FirstOrDefault(i => i.hpInfo != null && i.hpInfo.WeaponCategory.ID == widget.Key);
             if (item != null)
             {
                 widget.Value.Show();
@@ -79,7 +79,7 @@ public abstract class HPHandler : MonoBehaviour
 
         foreach (var widget in hardpoints)
         {
-            var item = usage?.FirstOrDefault(i => i.hpInfo.WeaponCategory.ID == widget.Key);
+            var item = usage?.FirstOrDefault(i => i.hpInfo != null && i.hpInfo.WeaponCategory.ID == widget.Key);
             if (item != null)
             {
                 widget.Value.Show();

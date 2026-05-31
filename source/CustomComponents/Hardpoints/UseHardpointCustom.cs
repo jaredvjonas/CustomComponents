@@ -23,7 +23,11 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
         WeaponCategory = cat ?? WeaponCategoryEnumeration.GetNotSetValue();
 
         hpInfo = WeaponCategory.Is_NotSet ? null : HardpointController.Instance[WeaponCategory];
-        if (hpInfo != null && !hpInfo.AllowOnWeapon)
+        if (hpInfo == null && !WeaponCategory.Is_NotSet)
+        {
+            Log.Main.Error?.Log($"Missing weapon category info: CategoryID={WeaponCategory.ID}, CategoryName={WeaponCategory.Name}, FriendlyName={WeaponCategory.FriendlyName}, Component={Def.Description.Id}");
+        }
+        else if (hpInfo != null && !hpInfo.AllowOnWeapon)
         {
             Log.Main.Error?.Log($"{Def.Description.Id} use {value} weapon category that cannot be used on weapons");
             hpInfo = null;
@@ -59,6 +63,7 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
         var hpinfo = HardpointController.Instance[WeaponCategory];
         if (hpinfo == null || !hpinfo.Visible || !Control.Settings.HardpointDescriptionAddedByDefault)
         {
+            // Note: hpinfo being null here is already logged in LoadValue, no need to log again
             return;
         }
 
@@ -87,7 +92,7 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
         var hp = lhepler.HardpointsUsage;
 
 
-        if (lhepler.HardpointsUsage.All(i => !i.hpInfo.CompatibleID.Contains(WeaponCategory.ID)))
+        if (lhepler.HardpointsUsage.All(i => i.hpInfo == null || !i.hpInfo.CompatibleID.Contains(WeaponCategory.ID)))
         {
             var mech = MechLabHelper.CurrentMechLab.ActiveMech;
             return new Text(Control.Settings.Message.Base_AddNoHardpoints, mech.Description.UIName,
@@ -136,11 +141,11 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
                 continue;
             }
 
-            var hardpoint = hardpoints.FirstOrDefault(i => i.Used < i.Total && i.hpInfo.CompatibleID.Contains(oth_use_hp.WeaponCategory.ID));
+            var hardpoint = hardpoints.FirstOrDefault(i => i.Used < i.Total && i.hpInfo != null && i.hpInfo.CompatibleID.Contains(oth_use_hp.WeaponCategory.ID));
 
             if (hardpoint != null)
             {
-                hardpoint.Used +=1;
+                hardpoint.Used += 1;
                 if (hardpoint.hpInfo.CompatibleID.Contains(WeaponCategory.ID))
                 {
                     candidants.Add(slotitem);
@@ -156,7 +161,7 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
             }
         }
 
-        if (hardpoints.Any(i => i.Used < i.Total && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID)))
+        if (hardpoints.Any(i => i.Used < i.Total && i.hpInfo != null && i.hpInfo.CompatibleID.Contains(hpInfo.WeaponCategory.ID)))
         {
             return string.Empty;
         }

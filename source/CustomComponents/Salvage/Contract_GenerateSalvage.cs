@@ -204,17 +204,28 @@ public static class Contract_GenerateSalvage
             }
         }
 
-        Log.SalvageProcess.Trace?.Log($"- Enemy Vechicle {__instance.Name}");
-        foreach (var vechicle in enemyVehicles)
+        // Vanilla never salvages destroyed vehicles. Only walk vehicle inventories when
+        // explicitly enabled. Vehicle components can reference defs that aren't loaded
+        // (e.g. Heavy Metal DLC stubs), producing null-def salvage picks that later crash
+        // AAR_SalvageChosen.SortBy_Name on Confirm. Default off restores vanilla behavior.
+        if (Control.Settings.SalvageVehicleComponents)
         {
-            Log.SalvageProcess.Trace?.Log($"-- Salvaging {vechicle?.Chassis?.Description?.Name}");
-            foreach (var component in vechicle.Inventory.Where(item =>
-                         item.DamageLevel != ComponentDamageLevel.Destroyed))
+            Log.SalvageProcess.Trace?.Log($"- Enemy Vechicle {__instance.Name}");
+            foreach (var vechicle in enemyVehicles)
             {
-                Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID}");
-                contract.AddMechComponentToSalvage(___finalPotentialSalvage, component.Def, ComponentDamageLevel.Functional, false,
-                    Constants, simgame.NetworkRandom);
+                Log.SalvageProcess.Trace?.Log($"-- Salvaging {vechicle?.Chassis?.Description?.Name}");
+                foreach (var component in vechicle.Inventory.Where(item =>
+                             item.DamageLevel != ComponentDamageLevel.Destroyed))
+                {
+                    Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID}");
+                    contract.AddMechComponentToSalvage(___finalPotentialSalvage, component.Def, ComponentDamageLevel.Functional, false,
+                        Constants, simgame.NetworkRandom);
+                }
             }
+        }
+        else
+        {
+            Log.SalvageProcess.Trace?.Log($"- Enemy vehicles skipped (SalvageVehicleComponents=false) {__instance.Name}");
         }
 
         contract.FilterPotentialSalvage(___finalPotentialSalvage);
