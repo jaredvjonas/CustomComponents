@@ -55,17 +55,20 @@ public static class Contract_GenerateSalvage
         List<UnitResult> lostUnits, bool logResults,
         Contract __instance, ref List<SalvageDef> ___finalPotentialSalvage)
     {
-        // Strip vehicle units from the salvage input up front so EVERY salvage consumer
-        // excludes them - not just this override, but vanilla and other postfix patchers
-        // (e.g. SalvageOperations) that independently iterate enemyMechs. CustomUnits delivers
-        // combat vehicles as Mech-type units in enemyMechs. Done before the early-returns below
-        // so it applies regardless of OverrideSalvageGeneration / __runOriginal.
-        if (!Control.Settings.SalvageVehicleComponents && enemyMechs != null)
+        // IrianTech (TKT-022): a vehicle must NEVER contribute a PART/chassis to salvage - only its
+        // mounted weapons/component upgrades (handled in the vehicle-components pass below). CustomUnits
+        // delivers combat vehicles as Mech-type units in enemyMechs, where AddMechToSalvage would create
+        // a vehicle mech-part AND other patchers (SalvageOperations) independently add vehicle parts.
+        // So ALWAYS capture then strip vehicle units from enemyMechs up front (before the early-returns,
+        // so it applies to every consumer). Their components are re-added (components-only) in the body.
+        List<UnitResult> vehicleUnits = new();
+        if (enemyMechs != null)
         {
-            int removed = enemyMechs.RemoveAll(u => IsVehicleUnit(u?.mech));
-            if (removed > 0)
+            vehicleUnits = enemyMechs.Where(u => IsVehicleUnit(u?.mech)).ToList();
+            if (vehicleUnits.Count > 0)
             {
-                Log.SalvageProcess.Trace?.Log($"Removed {removed} vehicle unit(s) from salvage input (SalvageVehicleComponents=false)");
+                enemyMechs.RemoveAll(u => IsVehicleUnit(u?.mech));
+                Log.SalvageProcess.Trace?.Log($"Stripped {vehicleUnits.Count} vehicle unit(s) from enemyMechs (no vehicle parts in salvage)");
             }
         }
 
@@ -230,12 +233,7 @@ public static class Contract_GenerateSalvage
         Log.SalvageProcess.Trace?.Log($"- Enemy Mechs {__instance.Name}");
         foreach (var unit in enemyMechs)
         {
-            if (!Control.Settings.SalvageVehicleComponents && IsVehicleUnit(unit.mech))
-            {
-                Log.SalvageProcess.Trace?.Log($"-- {unit.mech?.Name} is a vehicle - skipping (SalvageVehicleComponents=false)");
-                continue;
-            }
-
+            // vehicles were already stripped above (they never yield mech parts)
             if (unit.pilot.IsIncapacitated || IsDestroyed(unit.mech) || unit.pilot.HasEjected)
             {
                 AddMechToSalvage(unit.mech, contract, simgame, Constants, ___finalPotentialSalvage);
@@ -247,20 +245,35 @@ public static class Contract_GenerateSalvage
             }
         }
 
-        // Vanilla never salvages destroyed vehicles. Only walk vehicle inventories when
-        // explicitly enabled. Vehicle components can reference defs that aren't loaded
-        // (e.g. Heavy Metal DLC stubs), producing null-def salvage picks that later crash
-        // AAR_SalvageChosen.SortBy_Name on Confirm. Default off restores vanilla behavior.
+        // IrianTech (TKT-022): salvage vehicle MOUNTED COMPONENTS ONLY (weapons + upgrades) - NEVER a
+        // vehicle part/chassis (vehicles were stripped from enemyMechs above so no part is ever created
+        // by us or other patchers). Recover them even from destroyed locations (parity with mech
+        // recover-all, TKT-014). Unresolved/stub defs (Heavy Metal DLC) are filtered centrally by
+        // AddMechComponentToSalvage -> CheckDefaults so they cannot crash AAR_SalvageChosen.SortBy_Name.
         if (Control.Settings.SalvageVehicleComponents)
         {
-            Log.SalvageProcess.Trace?.Log($"- Enemy Vechicle {__instance.Name}");
+            Log.SalvageProcess.Trace?.Log($"- Vehicle components (no parts) {__instance.Name}");
+            // (a) vehicles delivered as Mech-type units (CustomUnits) - captured & stripped above
+            foreach (var unit in vehicleUnits)
+            {
+                if (!(unit.pilot.IsIncapacitated || IsDestroyed(unit.mech) || unit.pilot.HasEjected))
+                {
+                    continue;
+                }
+                foreach (var component in unit.mech.Inventory)
+                {
+                    Log.SalvageProcess.Trace?.Log($"--- Adding vehicle component {component.ComponentDefID}");
+                    contract.AddMechComponentToSalvage(___finalPotentialSalvage, component.Def, ComponentDamageLevel.Functional, false,
+                        Constants, simgame.NetworkRandom);
+                }
+            }
+            // (b) true VehicleDef units, if any are delivered that way
             foreach (var vechicle in enemyVehicles)
             {
-                Log.SalvageProcess.Trace?.Log($"-- Salvaging {vechicle?.Chassis?.Description?.Name}");
-                foreach (var component in vechicle.Inventory.Where(item =>
-                             item.DamageLevel != ComponentDamageLevel.Destroyed))
+                Log.SalvageProcess.Trace?.Log($"-- Vehicle {vechicle?.Chassis?.Description?.Name}");
+                foreach (var component in vechicle.Inventory)
                 {
-                    Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID}");
+                    Log.SalvageProcess.Trace?.Log($"--- Adding vehicle component {component.ComponentDefID}");
                     contract.AddMechComponentToSalvage(___finalPotentialSalvage, component.Def, ComponentDamageLevel.Functional, false,
                         Constants, simgame.NetworkRandom);
                 }
@@ -268,7 +281,7 @@ public static class Contract_GenerateSalvage
         }
         else
         {
-            Log.SalvageProcess.Trace?.Log($"- Enemy vehicles skipped (SalvageVehicleComponents=false) {__instance.Name}");
+            Log.SalvageProcess.Trace?.Log($"- Vehicle components skipped (SalvageVehicleComponents=false) {__instance.Name}");
         }
 
         contract.FilterPotentialSalvage(___finalPotentialSalvage);
@@ -380,11 +393,14 @@ public static class Contract_GenerateSalvage
             }
             else
             {
-                foreach (var component in mech.Inventory.Where(item =>
-                             !mech.IsLocationDestroyed(item.MountedLocation) &&
-                             item.DamageLevel != ComponentDamageLevel.Destroyed))
+                // IrianTech (TKT-014): recover ALL weapons/components, even from destroyed
+                // locations and even if the component itself was destroyed. Salvage adds
+                // component defs to inventory as functional parts (loose items have no damaged
+                // state). NoSalvage/fixed items are still excluded downstream by
+                // AddMechComponentToSalvage -> CheckDefaults.
+                foreach (var component in mech.Inventory)
                 {
-                    Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID}");
+                    Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID} (dmg={component.DamageLevel}, locDestroyed={mech.IsLocationDestroyed(component.MountedLocation)})");
                     contract.AddMechComponentToSalvage(salvage, component.Def, ComponentDamageLevel.Functional, false,
                         constants, simgame.NetworkRandom);
                 }

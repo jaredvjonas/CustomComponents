@@ -25,6 +25,19 @@ public static class Contract_AddMechComponentToSalvage
             return false;
         }
 
+        // IrianTech (TKT-022): guard unresolved/stub defs (e.g. unloaded vehicle / Heavy Metal DLC
+        // components). Without this, such defs become null-named salvage picks that crash
+        // AAR_SalvageChosen.SortBy_Name on Confirm - the exact freeze that forced
+        // SalvageVehicleComponents off. With this guard, vehicle salvage is safe to enable.
+        if (def.Description == null
+            || string.IsNullOrEmpty(def.Description.Id)
+            || string.IsNullOrEmpty(def.Description.UIName)
+            || string.IsNullOrEmpty(def.Description.Name))
+        {
+            Log.Main.Error?.Log("Salvage: skipping component with unresolved/null-named description (would crash AAR_SalvageChosen.SortBy_Name)");
+            return false;
+        }
+
 
         if (!def.CCFlags().NoSalvage)
         {
