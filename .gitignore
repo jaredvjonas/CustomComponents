@@ -268,3 +268,7 @@ paket-files/
 __pycache__/
 *.pyc
 /readme_images
+
+# Local Claude Code config and build/release artifacts
+.claude/
+*.zip
