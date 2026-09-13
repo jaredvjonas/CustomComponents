@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using BattleTech;
 using FluffyUnderware.DevTools.Extensions;
@@ -195,6 +196,9 @@ public static class HardpointExtentions
             }
 
             hp_database[id] = dictionary;
+
+            // [OMNI-DIAG] one concise report per chassis, emitted once on first build
+            LogOmniDiagnostics(chassis);
         }
 
         return dictionary[location];
@@ -370,6 +374,69 @@ public static class HardpointExtentions
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// [OMNI-DIAG] Reports how this chassis's omni pods resolved, once per chassis.
+    /// An omni pod is only usable if the weapon category named by Settings.OmniCategoryID is
+    /// registered; BuildHardpoints silently skips the pod when it is not, which makes the mech
+    /// look like it only has its nominal (non-omni) mounts in the MechLab.
+    /// </summary>
+    private static void LogOmniDiagnostics(ChassisDef chassis)
+    {
+        try
+        {
+            var omniByLocation = new List<string>();
+            var totalOmni = 0;
+
+            foreach (var location in DefaultsDatabase.SingleLocations)
+            {
+                var def = chassis.GetLocationDef(location);
+                if (def.Hardpoints == null)
+                {
+                    continue;
+                }
+
+                var count = def.Hardpoints.Count(hp => hp.Omni);
+                if (count > 0)
+                {
+                    omniByLocation.Add($"{location}={count}");
+                    totalOmni += count;
+                }
+            }
+
+            if (totalOmni == 0)
+            {
+                return; // not an omni chassis - stay quiet
+            }
+
+            var id = chassis.Description?.Id ?? "unknown";
+            var wc = WeaponCategoryEnumeration.GetWeaponCategoryByID(Control.Settings.OmniCategoryID);
+
+            if (wc == null || wc.Is_NotSet)
+            {
+                Log.Main.Info?.Log($"[OMNI-DIAG] {id}: {totalOmni} omni pods ({string.Join(" ", omniByLocation)}) are ALL BEING DROPPED - weapon category id {Control.Settings.OmniCategoryID} is not registered. Register it (WeaponCategory.json) and add a matching CCHardpoints entry, or these pods cannot hold anything in the MechLab.");
+                return;
+            }
+
+            var hpInfo = HardpointController.Instance?[wc];
+            if (hpInfo == null)
+            {
+                Log.Main.Info?.Log($"[OMNI-DIAG] {id}: {totalOmni} omni pods ({string.Join(" ", omniByLocation)}) resolve to category '{wc.Name}' but NO CCHardpoints definition exists for it - pods will not accept anything.");
+                return;
+            }
+
+            var accepts = hpInfo.CompatibleID == null || hpInfo.CompatibleID.Count == 0
+                ? "NOTHING (empty compatible list)"
+                : string.Join("/", hpInfo.CompatibleID
+                    .Select(cid => WeaponCategoryEnumeration.GetWeaponCategoryByID(cid)?.Name ?? cid.ToString()));
+
+            Log.Main.Info?.Log($"[OMNI-DIAG] {id}: {totalOmni} omni pods ({string.Join(" ", omniByLocation)}) -> category '{wc.Name}', accepts {accepts}");
+        }
+        catch (Exception ex)
+        {
+            Log.Main.Error?.Log($"[OMNI-DIAG] diagnostics failed for {chassis?.Description?.Id}: {ex}");
+        }
     }
 
     private static Dictionary<ChassisLocations, List<HPUsage>> BuildHardpoints(ChassisDef chassis)

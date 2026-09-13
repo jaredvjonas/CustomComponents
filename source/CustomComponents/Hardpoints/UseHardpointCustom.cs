@@ -92,6 +92,15 @@ public class UseHardpointCustom : SimpleCustomComponent, IValueComponent<string>
         var hp = lhepler.HardpointsUsage;
 
 
+        // [OMNI-DIAG] record what the location actually offers and whether this weapon fits.
+        // Logged at Info so it lands in battletech_log.txt without enabling trace levels.
+        var accepted = hp?.Any(u => u.hpInfo != null && u.hpInfo.CompatibleID.Contains(WeaponCategory.ID)) ?? false;
+        var offered = (hp == null || hp.Count == 0)
+            ? "(none)"
+            : string.Join(", ", hp.Select(u =>
+                $"{(u.hpInfo?.WeaponCategory.Name ?? "?")}:{u.Used}/{u.Total}"));
+        Log.Main.Info?.Log($"[OMNI-DIAG] drop {Def.Description.Id} [{WeaponCategory.Name}] -> {location}: {(accepted ? "ACCEPTED" : "REJECTED")}; location offers {offered}");
+
         if (lhepler.HardpointsUsage.All(i => i.hpInfo == null || !i.hpInfo.CompatibleID.Contains(WeaponCategory.ID)))
         {
             var mech = MechLabHelper.CurrentMechLab.ActiveMech;
