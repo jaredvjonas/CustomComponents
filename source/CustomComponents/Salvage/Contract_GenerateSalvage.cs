@@ -396,12 +396,33 @@ public static class Contract_GenerateSalvage
                 // IrianTech (TKT-014): recover ALL weapons/components, even from destroyed
                 // locations and even if the component itself was destroyed. Salvage adds
                 // component defs to inventory as functional parts (loose items have no damaged
-                // state). NoSalvage/fixed items are still excluded downstream by
-                // AddMechComponentToSalvage -> CheckDefaults.
+                // state).
                 foreach (var component in mech.Inventory)
                 {
+                    var def = component.Def;
+
+                    // A missing/unresolved def would reach CheckDefaults as null and be logged as
+                    // an error every time; skip it here instead.
+                    if (def == null)
+                    {
+                        Log.SalvageProcess.Trace?.Log($"--- Skipping {component.ComponentDefID} - def did not resolve");
+                        continue;
+                    }
+
+                    // IrianTech: never salvage CC companion/linked items. These are added
+                    // automatically alongside their parent (CC "Linked" custom) and carry the
+                    // "default" flag, which CCFlags folds into NoSalvage. They are not standalone
+                    // equipment - handing one to the player produces an item that cannot be
+                    // installed on its own. CheckDefaults filters these downstream too; doing it
+                    // here keeps the intent explicit and keeps them out of the trace.
+                    if (def.CCFlags().NoSalvage)
+                    {
+                        Log.SalvageProcess.Trace?.Log($"--- Skipping {component.ComponentDefID} - NoSalvage (linked/default/unlimited)");
+                        continue;
+                    }
+
                     Log.SalvageProcess.Trace?.Log($"--- Adding {component.ComponentDefID} (dmg={component.DamageLevel}, locDestroyed={mech.IsLocationDestroyed(component.MountedLocation)})");
-                    contract.AddMechComponentToSalvage(salvage, component.Def, ComponentDamageLevel.Functional, false,
+                    contract.AddMechComponentToSalvage(salvage, def, ComponentDamageLevel.Functional, false,
                         constants, simgame.NetworkRandom);
                 }
             }
